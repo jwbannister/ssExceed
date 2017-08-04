@@ -1,0 +1,42 @@
+---
+output: 
+html_document:
+css: style.css
+---
+
+```{r setup, include=FALSE}
+library(pander)
+panderOptions('knitr.auto.asis', FALSE)
+panderOptions('table.alignment.rownames', 'left')
+panderOptions('keep.line.breaks', TRUE)
+```
+
+```{r load, include=F}
+source("load.R")
+```
+
+```{r exceedances, echo=F, message=F, results='hide'}
+source("salton_exceedances.R")
+```
+
+```{r event_pages, echo=F, results='asis'}
+for (i in 1:length(event_list)){
+    report_header(as.Date(names(event_list)[i]), report_date)
+    cat(" \n## Sites in Exceedance \n")
+    cat("<body>")
+    pandoc.table(as.data.frame(filter(events, Date==names(event_list)[i])), 
+                 split.table=Inf)
+    cat("</body>")
+    cat("<hr class=\"style2\">")
+    cat(paste0("<p>![](", event_list[[i]]$time_img, ")</p>"))
+    cat("<hr class=\"style2\">")
+    cat(paste0("<p>![](", event_list[[i]]$photo_img, ")</p>"))
+    cat("<p style=\"page-break-after:always;\"></p> \n")
+    report_header(as.Date(names(event_list)[i]), report_date)
+    cat(" \n## Site Dust Roses \n")
+    cat("<center>")
+    cat(paste0("<p>![](", event_list[[i]]$map_img, ")</p>"))
+    cat("</center>")
+    cat("<p style=\"page-break-after:always;\"></p> \n")
+}
+```
