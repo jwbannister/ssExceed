@@ -19,17 +19,34 @@ source("load.R")
 source("salton_exceedances.R")
 ```
 
+```{r summary_page, echo=F, results='asis'}
+split_lines <- 50
+summary_splits <- ceiling(nrow(summary_table)/split_lines)
+for (i in 1:summary_splits){
+    summary_header()
+    if (i==1){
+        cat(" \n## Total # of Exceedance Days = ", nrow(summary_table), "\n")
+        cat("<hr class=\"style2\">")
+    }
+    tmp_end <- min(nrow(summary_table), i*split_lines)
+    tmp_summary <- summary_table[(i-1)*split_lines+1:tmp_end, ]
+    pandoc.table(as.data.frame(tmp_summary), split.table=Inf)
+    cat("<p style=\"page-break-after:always;\"></p> \n")
+}
+```
+
 ```{r event_pages, echo=F, results='asis'}
 for (i in 1:length(event_list)){
     report_header(as.Date(names(event_list)[i]), report_date)
-    cat(" \n## Sites in Exceedance \n")
+    cat(" \n## Monitoring Sites \n")
+    cat(" \n Values in exceedance are listed **bold**. \n")
     cat("<body>")
-    pandoc.table(as.data.frame(filter(events, Date==names(event_list)[i])), 
-                 split.table=Inf)
+    pandoc.table(as.data.frame(event_list[[i]]$table), split.table=Inf)
     cat("</body>")
     cat("<hr class=\"style2\">")
     cat(paste0("<p>![](", event_list[[i]]$time_img, ")</p>"))
     cat("<hr class=\"style2\">")
+    cat(" \n## Photos During Highest PM<sub>10</sub> Hour \n\n")
     cat(paste0("<p>![](", event_list[[i]]$photo_img, ")</p>"))
     cat("<p style=\"page-break-after:always;\"></p> \n")
     report_header(as.Date(names(event_list)[i]), report_date)
@@ -37,6 +54,24 @@ for (i in 1:length(event_list)){
     cat("<center>")
     cat(paste0("<p>![](", event_list[[i]]$map_img, ")</p>"))
     cat("</center>")
+
+    # check for comment file and see how long
+    gdrive_comments <- system(paste0(getwd(), "/gdrive list ", 
+                      "-q \"'0B8qHESXOhs-DVmJjVTVxLXZvNms' in parents\" ", 
+                      "-m 10000"), intern=T)  
+    cmnt_fl <- tempfile()
+    write.table(gdrive_comments, file=cmnt_fl, quote=F, row.names=F, col.names=F)
+    comment_list <- read.fwf(file=cmnt_fl, widths=c(29, 29), strip.white=T)
+    comment_file <- paste0("exceeds_", gsub("-", "", names(event_list)[i]), ".txt")
+    cat(" \n\n## Comments \n")
+    if (comment_file %in% comment_list[ , 2]){
+        system(paste0(getwd(), "/gdrive download --path ", tempdir(), " ", 
+                      comment_list[ , 1][which(comment_list[ , 2]==comment_file)]))
+        for (n in 1:length(readLines(paste0(tempdir(), "/", comment_file)))){
+            cat(" \n", readLines(paste0(tempdir(), "/", comment_file))[n], 
+                " \n", sep="")
+        }
+    }
     cat("<p style=\"page-break-after:always;\"></p> \n")
 }
 ```

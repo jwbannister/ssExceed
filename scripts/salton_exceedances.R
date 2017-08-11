@@ -5,24 +5,37 @@ load_all("~/code/aiRsci")
 load_all("~/code/Roses")
 load_all()
 
-df2$date <- as.Date(df2$datetime %m-% seconds(1), tz="America/Los_Angeles")
+hour_df$date <- as.Date(hour_df$datetime %m-% seconds(1), tz="America/Los_Angeles")
 pm10_cutoff <- 150
-events <- df2 %>% filter(between(date, start_date, end_date)) %>%
+exceeds <- hour_df %>% filter(between(date, start_date, end_date)) %>%
     group_by(deployment, date) %>%
-    summarize(pm10_24=sum(pm10)/length(pm10)) %>%
+    summarize(pm10_24=sum(pm10)/length(pm10), pm25_24=sum(pm25)/length(pm25)) %>%
     filter(pm10_24>pm10_cutoff) %>% ungroup() %>% arrange(date)
+exceed_days <- unique(exceeds$date)
+event_summary <- hour_df %>% filter(date %in% exceed_days) %>%
+    group_by(deployment, date) %>%
+    summarize(pm10_24=sum(pm10)/length(pm10), pm25_24=sum(pm25)/length(pm25)) %>%
+    ungroup() %>% arrange(date)
+summary_table <- exceeds %>% group_by(format(date, "%m-%d-%Y")) %>%
+    summarize(n_stations=length(deployment), 
+              max_pm10=round(max(pm10_24), 0))
+names(summary_table) <- 
+    c("Date of Exceedance", "# of Stations in Exceedance", 
+      "Maximum Observed 24-hour PM<sub>10</sub>\n(ug/m<sup>3</sup>)")
 
 # get background for use in dust rose plot
-buffer <- 14000
-background <- plot_extended_background(min(loc_df$x)-buffer, max(loc_df$x)+buffer, 
-                                       min(loc_df$y)-buffer, max(loc_df$y)+buffer)
+buffer <- 24000
+background <- suppressWarnings(photo_background(min(loc_df$x)-buffer, 
+                                               max(loc_df$x)+buffer, 
+                                               min(loc_df$y)-buffer, 
+                                               max(loc_df$y)+buffer, zone="11N"))
 # set coordinates for determining daylight hours
 salton_sea <- matrix(c(-115.8434, 33.3286), nrow=1) 
 
-event_list <- vector(mode="list", length=length(unique(events$date)))
-names(event_list) <- unique(events$date)
+event_list <- vector(mode="list", length=length(exceed_days))
+names(event_list) <- exceed_days
 for (i in names(event_list)){ 
-    event_df <- filter(df2, date==i)
+    event_df <- filter(hour_df, date==i)
     a <- select(event_df, deployment, datetime, value=pm10) %>% 
         mutate(factor="PM10 (ug/m^3)")
     b <- select(event_df, deployment, datetime, value=ws) %>% 
@@ -109,9 +122,8 @@ for (i in names(event_list)){
                                event_list[[i]]$photos[['Salton City']]), ncol=3)
     dev.off()
     # build dustrose map
-    plot_data <- event_df %>% select(deployment, datetime, pm10, wd) %>%
-        filter(!is.na(pm10))
-    wd_missing <- plot_data[is.na(plot_data$wd), 1:2]
+    rose_data <- event_df %>% select(deployment, datetime, pm10, wd)
+    wd_missing <- rose_data[is.na(rose_data$wd), 1:2]
     if (nrow(wd_missing)>0){
         wind_fill_query <- paste0("SELECT i.deployment, m.datetime, ",
                                   "COALESCE(m.wd_6m, m.wdv_2d) as WD ",
@@ -123,20 +135,36 @@ for (i in names(event_list)){
                                   "AND (m.datetime - '1 second'::interval)::date=", 
                                   "'", i, "'::date;")
         wd_fill <- query_db("saltonsea", wind_fill_query)
-        plot_data <- plot_data %>% 
+        rose_data <- rose_data %>% 
             left_join(wd_fill, by=c("deployment", "datetime")) %>%
             mutate(wd=coalesce(wd.x, wd.y)) %>% select(-wd.x, -wd.y)
     }
-    # filter out Naval Test Base before Nov 2016 - bad wind data
-    if (year(start_date)==2016 & month(start_date)<11){
-        plot_data <- filter(plot_data, deployment!='Naval Test Base')
-    }
-    event_list[[i]]$map <- event_plot(loc_df, plot_data, background)
+    label_data <- event_summary %>% filter(date==i) %>%
+        mutate(label=paste0(deployment, "\n", round(pm10_24, 0))) %>%
+        left_join(loc_df, by="deployment")
+    label_data$flag <- sapply(label_data$pm10_24, 
+                              function(x) ifelse(x>150, T, F))
+    label_data <- adjust_labels(label_data)
+    event_list[[i]]$map <- event_plot(loc_df, rose_data, label_data, background)
     event_list[[i]]$map_img <- paste0(tempfile(), ".png")
     png(filename=event_list[[i]]$map_img, width=8, height=8, units="in", 
         res=300)
     print(event_list[[i]]$map)
     dev.off()
+    # build table to display for each event day
+    event_list[[i]]$table <- event_summary %>% filter(date==i) %>% 
+        left_join(loc_df, by="deployment") %>% arrange(desc(y)) %>% 
+        select(-x, -y, -date)
+    event_list[[i]]$table$pm10_24 <- round(event_list[[i]]$table$pm10_24, 0)
+    event_list[[i]]$table$pm25_24 <- round(event_list[[i]]$table$pm25_24, 0)
+    event_list[[i]]$table$pm10_24 <- 
+        sapply(event_list[[i]]$table$pm10_24, 
+               function(x) ifelse(x>150, paste0("<b>",x, "</b>"), x))
+    event_list[[i]]$table$pm10_24 <- sapply(event_list[[i]]$table$pm10_24, 
+                                            function(x) ifelse(is.na(x), "-", x))
+    event_list[[i]]$table$pm25_24 <- sapply(event_list[[i]]$table$pm25_24, 
+                                            function(x) ifelse(is.na(x), "-", x))
+    names(event_list[[i]]$table) <- c("Deployment",  
+                       "24-hour PM<sub>10</sub> Avg. (ug/m<sup>3</sup>)", 
+                       "24-hour PM<sub>2.5</sub> Avg. (ug/m<sup>3</sup>)") 
 }
-names(events) <- c("Deployment", "Date", 
-                   "24-hour PM<sub>10</sub> Avg. (ug/m<sup>3</sup>)") 
