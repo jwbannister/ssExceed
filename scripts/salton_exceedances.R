@@ -15,10 +15,12 @@ event_summary <- hour_df %>% filter(date %in% exceed_days) %>%
     group_by(deployment, date) %>%
     summarize(pm10_24=sum(pm10)/length(pm10), pm25_24=sum(pm25)/length(pm25)) %>%
     ungroup() %>% arrange(date)
-summary_table <- exceeds %>% arrange(date) %>%
-    group_by(format(date, "%m-%d-%Y")) %>%
+summary_table <- exceeds %>% 
+    group_by(date) %>%
     summarize(n_stations=length(deployment), 
-              max_pm10=round(max(pm10_24), 0))
+              max_pm10=round(max(pm10_24), 0)) %>%
+    arrange(date)
+summary_table$date <- format(summary_table$date, "%m-%d-%Y")
 names(summary_table) <- 
     c("Date of Exceedance", "# of Stations in Exceedance", 
       "Maximum Observed 24-hour PM<sub>10</sub>\n(ug/m<sup>3</sup>)")
@@ -151,7 +153,10 @@ for (i in names(event_list)){
     wd_missing <- rose_data[is.na(rose_data$wd), 1:2]
     if (nrow(wd_missing)>0){
         wind_fill_query <- paste0("SELECT i.deployment, m.datetime, ",
-                                  "COALESCE(m.wd_6m, m.wdv_2d) as WD ",
+                                  "m.wdv_2d as wd, ",
+                                  "flags.is_invalid(m.deployment_id, 136, ", 
+                                  "m.datetime - '1 hour'::interval, m.datetime) ", 
+                                  "AS invalid_wd ",
                                   "FROM met.met_1hour m JOIN info.deployments i ",
                                   "ON m.deployment_id=i.deployment_id ",
                                   "WHERE i.deployment IN ('",
@@ -159,7 +164,8 @@ for (i in names(event_list)){
                                         collapse="', '"), "') ", 
                                   "AND (m.datetime - '1 second'::interval)::date=", 
                                   "'", i, "'::date;")
-        wd_fill <- query_db("saltonsea", wind_fill_query)
+        wd_fill <- query_db("saltonsea", wind_fill_query) %>%
+            filter(!invalid_wd)
         if (nrow(wd_fill)>0){
             rose_data <- rose_data %>% 
                 left_join(wd_fill, by=c("deployment", "datetime")) %>%
