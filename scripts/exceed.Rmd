@@ -25,7 +25,7 @@ summary_splits <- ceiling(nrow(summary_table)/split_lines)
 for (i in 1:summary_splits){
     summary_header()
     if (i==1){
-        cat(" \n## Total # of Exceedance Days = ", nrow(summary_table), "\n")
+        cat(" \n## ", nrow(summary_table), " Exceedance Days\n")
         cat("<hr class=\"style2\">")
     }
     tmp_end <- min(nrow(summary_table), i*split_lines)
@@ -46,7 +46,7 @@ for (i in 1:length(event_list)){
     cat("<hr class=\"style2\">")
     cat(paste0("<p>![](", event_list[[i]]$time_img, ")</p>"))
     cat("<hr class=\"style2\">")
-    cat(" \n## Photos During Highest PM<sub>10</sub> Hour \n\n")
+    cat(" \n## Photos From Highest PM<sub>10</sub> Hour \n\n\n")
     cat(paste0("<p>![](", event_list[[i]]$photo_img, ")</p>"))
     cat("<p style=\"page-break-after:always;\"></p> \n")
     report_header(as.Date(names(event_list)[i]), report_date)

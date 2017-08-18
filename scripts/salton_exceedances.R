@@ -2,7 +2,6 @@ library(ggplot2)
 library(tidyverse)
 library(lubridate)
 load_all("~/code/aiRsci")
-load_all("~/code/Roses")
 load_all()
 
 hour_df$date <- as.Date(hour_df$datetime %m-% seconds(1), tz="America/Los_Angeles")
@@ -16,7 +15,8 @@ event_summary <- hour_df %>% filter(date %in% exceed_days) %>%
     group_by(deployment, date) %>%
     summarize(pm10_24=sum(pm10)/length(pm10), pm25_24=sum(pm25)/length(pm25)) %>%
     ungroup() %>% arrange(date)
-summary_table <- exceeds %>% group_by(format(date, "%m-%d-%Y")) %>%
+summary_table <- exceeds %>% arrange(date) %>%
+    group_by(format(date, "%m-%d-%Y")) %>%
     summarize(n_stations=length(deployment), 
               max_pm10=round(max(pm10_24), 0))
 names(summary_table) <- 
@@ -35,17 +35,42 @@ salton_sea <- matrix(c(-115.8434, 33.3286), nrow=1)
 event_list <- vector(mode="list", length=length(exceed_days))
 names(event_list) <- exceed_days
 for (i in names(event_list)){ 
+    # build table to display for each event day
+    event_list[[i]]$table <- event_summary %>% filter(date==i) %>% 
+        left_join(loc_df, by="deployment") %>% arrange(desc(y)) %>% 
+        select(-x, -y, -date)
+    exceed_stations <- filter(event_list[[i]]$table, pm10_24>150)$deployment
+    event_list[[i]]$table$pm10_24 <- round(event_list[[i]]$table$pm10_24, 0)
+    event_list[[i]]$table$pm25_24 <- round(event_list[[i]]$table$pm25_24, 0)
+    event_list[[i]]$table$pm10_24 <- 
+        sapply(event_list[[i]]$table$pm10_24, 
+               function(x) ifelse(x>150, paste0("<b>",x, "</b>"), x))
+    event_list[[i]]$table$pm10_24 <- sapply(event_list[[i]]$table$pm10_24, 
+                                            function(x) ifelse(is.na(x), "-", x))
+    event_list[[i]]$table$pm25_24 <- sapply(event_list[[i]]$table$pm25_24, 
+                                            function(x) ifelse(is.na(x), "-", x))
+    names(event_list[[i]]$table) <- c("Deployment",  
+                       "24-hour PM<sub>10</sub> Avg. (ug/m<sup>3</sup>)", 
+                       "24-hour PM<sub>2.5</sub> Avg. (ug/m<sup>3</sup>)") 
+    # build timeseries plot
     event_df <- filter(hour_df, date==i)
     a <- select(event_df, deployment, datetime, value=pm10) %>% 
         mutate(factor="PM10 (ug/m^3)")
     b <- select(event_df, deployment, datetime, value=ws) %>% 
         mutate(factor="Wind Speed (m/s)")
     plot_df <- rbind(a, b)
-    # build timeseries plot
+    n2s <- loc_df %>% 
+        filter(deployment %in% unique(plot_df$deployment)) %>%
+        arrange(desc(y))
+    plot_df$deployment <- factor(plot_df$deployment, levels=n2s$deployment, 
+                                 ordered=T)
+    plot_df$flag <- sapply(plot_df$deployment, 
+                           function(x) ifelse(x %in% exceed_stations, T, F))
     timeseries <- plot_df %>%
         arrange(deployment, datetime) %>% 
         ggplot(aes(x=datetime, y=value)) +
-        geom_path(aes(color=deployment)) +
+        geom_path(aes(color=deployment, size=flag)) +
+        scale_size_manual(name="", values=c(.5, .75), guide="none") +
         facet_grid(factor ~ ., scales="free_y") +
         ylab("") + xlab("") +
         theme(legend.title=element_blank(), 
@@ -54,7 +79,7 @@ for (i in names(event_list)){
     event_list[[i]]$time_img <- paste0(tempfile(), ".png")
     png(filename=event_list[[i]]$time_img, width=8, height=3.5, units="in", 
         res=300)
-    print(timeseries)
+    suppressWarnings(print(timeseries))
     dev.off()
     # build event photos
     event_list[[i]]$photos <- vector(mode="list", length=3)
@@ -135,9 +160,11 @@ for (i in names(event_list)){
                                   "AND (m.datetime - '1 second'::interval)::date=", 
                                   "'", i, "'::date;")
         wd_fill <- query_db("saltonsea", wind_fill_query)
-        rose_data <- rose_data %>% 
-            left_join(wd_fill, by=c("deployment", "datetime")) %>%
-            mutate(wd=coalesce(wd.x, wd.y)) %>% select(-wd.x, -wd.y)
+        if (nrow(wd_fill)>0){
+            rose_data <- rose_data %>% 
+                left_join(wd_fill, by=c("deployment", "datetime")) %>%
+                mutate(wd=coalesce(wd.x, wd.y)) %>% select(-wd.x, -wd.y)
+        }
     }
     label_data <- event_summary %>% filter(date==i) %>%
         mutate(label=paste0(deployment, "\n", round(pm10_24, 0))) %>%
@@ -151,20 +178,4 @@ for (i in names(event_list)){
         res=300)
     print(event_list[[i]]$map)
     dev.off()
-    # build table to display for each event day
-    event_list[[i]]$table <- event_summary %>% filter(date==i) %>% 
-        left_join(loc_df, by="deployment") %>% arrange(desc(y)) %>% 
-        select(-x, -y, -date)
-    event_list[[i]]$table$pm10_24 <- round(event_list[[i]]$table$pm10_24, 0)
-    event_list[[i]]$table$pm25_24 <- round(event_list[[i]]$table$pm25_24, 0)
-    event_list[[i]]$table$pm10_24 <- 
-        sapply(event_list[[i]]$table$pm10_24, 
-               function(x) ifelse(x>150, paste0("<b>",x, "</b>"), x))
-    event_list[[i]]$table$pm10_24 <- sapply(event_list[[i]]$table$pm10_24, 
-                                            function(x) ifelse(is.na(x), "-", x))
-    event_list[[i]]$table$pm25_24 <- sapply(event_list[[i]]$table$pm25_24, 
-                                            function(x) ifelse(is.na(x), "-", x))
-    names(event_list[[i]]$table) <- c("Deployment",  
-                       "24-hour PM<sub>10</sub> Avg. (ug/m<sup>3</sup>)", 
-                       "24-hour PM<sub>2.5</sub> Avg. (ug/m<sup>3</sup>)") 
 }

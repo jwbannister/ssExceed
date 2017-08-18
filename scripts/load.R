@@ -63,7 +63,8 @@ query1 <- paste0("SELECT deployment, ",
                  "WHERE deployment IN ('", 
                  paste(unique(df1$deployment), collapse="', '"), "');")
 loc_df <- query_db("saltonsea", query1)
-loc_df <- filter(loc_df, x>=loc_df$x[loc_df$deployment=='PalmFire'])
+loc_df <- filter(loc_df, x>=loc_df$x[loc_df$deployment=='PalmFire'] & 
+                 y<=loc_df$y[loc_df$deployment=='PalmFire'])
 
 hour_df <- filter(df1, deployment %in% loc_df$deployment)
 
