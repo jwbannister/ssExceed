@@ -1,20 +1,16 @@
 library(tidyverse)
-load_all("~/code/aiRsci")
 
 # pull IID data
-query_teom <- paste0("SELECT i.deployment, t.datetime, t.pm10, t.pm25, ", 
-                     "flags.is_invalid(t.deployment_id, 144, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+query_teom <- paste0("SELECT i.deployment, t.datetime, t.pm10_stp AS pm10, 
+                     t.pm25, ", 
+                     "flags.field_is_invalid(t.deployment_id, 145, t.datetime) ",
                      "AS invalid_pm10, ",
-                     "flags.is_invalid(t.deployment_id, 146, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 146, t.datetime) ",
                      "AS invalid_pm25, ",
                      "m.ws_10m AS ws, m.wd_10m AS wd, ",
-                     "flags.is_invalid(t.deployment_id, 236, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 236, t.datetime) ",
                      "AS invalid_ws, ",
-                     "flags.is_invalid(t.deployment_id, 298, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 298, t.datetime) ",
                      "AS invalid_wd ",
                      "FROM teom.pm_1hour t LEFT JOIN info.deployments i ",
                      "ON t.deployment_id = i.deployment_id ", 
@@ -31,14 +27,11 @@ pm_df <- pm_pull %>% arrange(deployment, datetime) %>% filter(!invalid_pm10) %>%
 
 # pull AQMIS data
 query_aqmis <- paste0("SELECT i.deployment, t.datetime, t.pm10, ", 
-                     "flags.is_invalid(t.deployment_id, 144, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 162, t.datetime) ",
                      "AS invalid_pm10, m.ws, m.wd, ",
-                     "flags.is_invalid(t.deployment_id, 236, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 165, t.datetime) ",
                      "AS invalid_ws, ",
-                     "flags.is_invalid(t.deployment_id, 298, ", 
-                     "t.datetime - '1 hour'::interval, t.datetime) ", 
+                     "flags.field_is_invalid(t.deployment_id, 166, t.datetime) ",
                      "AS invalid_wd ",
                      "FROM aqmis.pm_1hour t LEFT JOIN info.deployments i ",
                      "ON t.deployment_id = i.deployment_id ", 
@@ -49,11 +42,15 @@ query_aqmis <- paste0("SELECT i.deployment, t.datetime, t.pm10, ",
                      "BETWEEN '", start_date, "'::date ",
                      "AND '", end_date, "'::date;")
 aqmis_pull <- query_db("saltonsea", query_aqmis)
+if (nrow(aqmis_pull)>0){
 aqmis_df <- aqmis_pull %>% arrange(deployment, datetime) %>% 
     filter(!invalid_pm10) %>% mutate(pm25=rep(NA, length(deployment))) %>%
     select(-invalid_pm10, -invalid_wd, -invalid_ws)
+    df1 <- rbind(pm_df, aqmis_df)
+} else{
+    df1 <- pm_df
+}
 
-df1 <- rbind(pm_df, aqmis_df)
 
 # pull deployment locations
 query1 <- paste0("SELECT deployment, ",
@@ -61,7 +58,8 @@ query1 <- paste0("SELECT deployment, ",
                  "ST_Y(ST_TRANSFORM(geom, 26911)) AS y ",
                  "FROM info.deployments ", 
                  "WHERE deployment IN ('", 
-                 paste(unique(df1$deployment), collapse="', '"), "');")
+                 paste(c(unique(df1$deployment), 'PalmFire'), collapse="', '"), 
+                 "');")
 loc_df <- query_db("saltonsea", query1)
 loc_df <- filter(loc_df, x>=loc_df$x[loc_df$deployment=='PalmFire'] & 
                  y<=loc_df$y[loc_df$deployment=='PalmFire'])

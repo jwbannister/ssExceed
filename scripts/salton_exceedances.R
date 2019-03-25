@@ -1,7 +1,6 @@
 library(ggplot2)
 library(tidyverse)
 library(lubridate)
-load_all("~/code/aiRsci")
 load_all()
 
 hour_df$date <- as.Date(hour_df$datetime %m-% seconds(1), tz="America/Los_Angeles")
